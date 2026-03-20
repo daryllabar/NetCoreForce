@@ -31,7 +31,7 @@ namespace NetCoreForce.ModelGenerator
                     type = typeof(DateTime);
                     break;
                 case FieldType.double_sf:
-                    type = typeof(double);
+                    type = typeof(decimal);
                     break;
                 case FieldType.int_sf:
                     type = typeof(int);
@@ -97,7 +97,7 @@ namespace NetCoreForce.ModelGenerator
                     type = typeof(string);
                     break;
                 case FieldType.percent_sf:
-                    type = typeof(double);
+                    type = typeof(decimal);
                     break;
                 case FieldType.phone_sf:
                     type = typeof(string);

@@ -338,8 +338,7 @@ namespace NetCoreForce.ModelGenerator
             AuthenticationClient auth = new AuthenticationClient(config.AuthInfo.ApiVersion);
             try
             {
-                await auth.UsernamePasswordAsync(config.AuthInfo.ClientId, config.AuthInfo.ClientSecret,
-                    config.AuthInfo.Username, config.AuthInfo.Password, config.AuthInfo.TokenRequestEndpoint);
+                await auth.ClientCredentialsAsync(config.AuthInfo.ClientId, config.AuthInfo.ClientSecret, config.AuthInfo.TokenRequestEndpoint);
 
                 Console.WriteLine("Connected to Salesforce");
             }
@@ -477,7 +476,7 @@ namespace NetCoreForce.ModelGenerator
             gen.AppendLine($"\t///<para>SObject Name: {data.Name}</para>");
             gen.AppendLine($"\t///<para>Custom Object: {data.Custom.ToString()}</para>");
             gen.AppendLine("\t///</summary>");
-            gen.AppendLine($"\tpublic class {className} : SObject");
+            gen.AppendLine($"\tpublic partial class {className} : SObject");
             gen.AppendLine("\t{");
 
             gen.AppendLine("\t\t[JsonIgnore]");
@@ -550,10 +549,11 @@ namespace NetCoreForce.ModelGenerator
                     }
 
                     //we want all nullable types in the model, so that they are not serialized/initialized with default values
-                    if (csTypeName == "bool" || csTypeName == "DateTimeOffset" || csTypeName == "DateTime" || csTypeName == "int" || csTypeName == "double" || csTypeName == "decimal")
-                    {
-                        csTypeName += "?";
-                    }
+                    //if (csTypeName == "bool" || csTypeName == "DateTimeOffset" || csTypeName == "DateTime" || csTypeName == "int" || csTypeName == "double" || csTypeName == "decimal")
+                    //{
+                    //    csTypeName += "?";
+                    //}
+                    csTypeName += "?";
 
                     gen.AppendLine(string.Format("\t\tpublic {0} {1} {{ get; set; }}", csTypeName, field.Name));
                     gen.AppendLine();
