@@ -491,7 +491,7 @@ namespace NetCoreForce.ModelGenerator
             // gen.AppendLine("\t\t{}");
             // gen.AppendLine();
 
-            foreach (var field in data.Fields)
+            foreach (var field in data.Fields.OrderBy(f => f.Name?.ToLower()))
             {
                 try
                 {
