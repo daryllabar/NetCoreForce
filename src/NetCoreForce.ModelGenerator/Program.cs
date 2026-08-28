@@ -54,13 +54,13 @@ namespace NetCoreForce.ModelGenerator
                     "API Client Secret, a.k.a. Consumer Secret",
                     CommandOptionType.SingleValue);
 
-                var usernameOption = command.Option("--username",
-                    "API Username",
-                    CommandOptionType.SingleValue);
+                //var usernameOption = command.Option("--username",
+                //    "API Username",
+                //    CommandOptionType.SingleValue);
 
-                var passwordOption = command.Option("--password",
-                    "API Password",
-                    CommandOptionType.SingleValue);
+                //var passwordOption = command.Option("--password",
+                //    "API Password",
+                //    CommandOptionType.SingleValue);
 
                 var configFileOption = command.Option("--config-file",
                     "Config file path",
@@ -120,15 +120,15 @@ namespace NetCoreForce.ModelGenerator
                         config.AuthInfo.ClientSecret = clientSecretOption.Value();
                     }
 
-                    if (usernameOption.HasValue())
-                    {
-                        config.AuthInfo.Username = usernameOption.Value();
-                    }
-
-                    if (passwordOption.HasValue())
-                    {
-                        config.AuthInfo.Password = passwordOption.Value();
-                    }
+                    //if (usernameOption.HasValue())
+                    //{
+                    //    config.AuthInfo.Username = usernameOption.Value();
+                    //}
+                    //
+                    //if (passwordOption.HasValue())
+                    //{
+                    //    config.AuthInfo.Password = passwordOption.Value();
+                    //}
 
                     if (customOption.HasValue())
                     {
@@ -223,19 +223,19 @@ namespace NetCoreForce.ModelGenerator
                 Console.WriteLine();
             }
 
-            while (string.IsNullOrEmpty(config.AuthInfo.Username))
-            {
-                Console.WriteLine("Enter API username:");
-                config.AuthInfo.Username = Console.ReadLine();
-                Console.WriteLine();
-            }
-
-            while (string.IsNullOrEmpty(config.AuthInfo.Password))
-            {
-                Console.WriteLine("Enter API password:");
-                config.AuthInfo.Password = Console.ReadLine();
-                Console.WriteLine();
-            }
+            //while (string.IsNullOrEmpty(config.AuthInfo.Username))
+            //{
+            //    Console.WriteLine("Enter API username:");
+            //    config.AuthInfo.Username = Console.ReadLine();
+            //    Console.WriteLine();
+            //}
+            //
+            //while (string.IsNullOrEmpty(config.AuthInfo.Password))
+            //{
+            //    Console.WriteLine("Enter API password:");
+            //    config.AuthInfo.Password = Console.ReadLine();
+            //    Console.WriteLine();
+            //}
 
             //object to generate
             if (config.Objects == null)
