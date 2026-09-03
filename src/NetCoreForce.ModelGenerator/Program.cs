@@ -377,6 +377,7 @@ namespace NetCoreForce.ModelGenerator
 
             Console.WriteLine("Output directory: " + config.OutputDirectory);
 
+            GenInterface(config);
 
             bool generateAll = false;
             if (config.Objects != null && config.Objects.Count > 0)
@@ -445,6 +446,37 @@ namespace NetCoreForce.ModelGenerator
             return;
         }
 
+        public static void GenInterface(GenConfig config)
+        {
+            StringBuilder gen = new StringBuilder();
+
+            if (!string.IsNullOrEmpty(config.ClassNamespace))
+            {
+                gen.AppendLine("namespace " + config.ClassNamespace);
+                gen.AppendLine("{");
+            }
+
+            gen.AppendLine("\t/// <summary>");
+            gen.AppendLine("\t/// Provides a common identity contract for all generated SObject classes.");
+            gen.AppendLine("\t/// </summary>");
+            gen.AppendLine("\tpublic interface ISObjectIdentity");
+            gen.AppendLine("\t{");
+            gen.AppendLine("\t\tstring? Id { get; }");
+            gen.AppendLine("\t\tstatic abstract string SObjectTypeName { get; }");
+            gen.AppendLine("\t}");
+
+            if (!string.IsNullOrEmpty(config.ClassNamespace))
+            {
+                gen.AppendLine("}");
+            }
+
+            string filePath = Path.Combine(config.OutputDirectory, "ISObjectIdentity.cs");
+
+            Console.WriteLine("Writing: " + filePath);
+
+            File.WriteAllText(filePath, gen.ToString());
+        }
+
         public static async Task<string> GenClass(ForceClient client, string objectName, string className, GenConfig config)
         {
             SObjectDescribeFull data = await client.GetObjectDescribe(objectName);
@@ -476,7 +508,7 @@ namespace NetCoreForce.ModelGenerator
             gen.AppendLine($"\t///<para>SObject Name: {data.Name}</para>");
             gen.AppendLine($"\t///<para>Custom Object: {data.Custom.ToString()}</para>");
             gen.AppendLine("\t///</summary>");
-            gen.AppendLine($"\tpublic partial class {className} : SObject");
+            gen.AppendLine($"\tpublic partial class {className} : SObject, ISObjectIdentity");
             gen.AppendLine("\t{");
 
             gen.AppendLine("\t\t[JsonIgnore]");
