@@ -461,7 +461,7 @@ namespace NetCoreForce.ModelGenerator
             gen.AppendLine("\t/// </summary>");
             gen.AppendLine("\tpublic interface ISObjectIdentity");
             gen.AppendLine("\t{");
-            gen.AppendLine("\t\tstring? Id { get; }");
+            gen.AppendLine("\t\tstring? Id { get; set; }");
             gen.AppendLine("\t\tstatic abstract string SObjectTypeName { get; }");
             gen.AppendLine("\t}");
 
