@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Dynamic;
 using System.Reflection;
 using System.IO;
 using System.Linq;
@@ -463,6 +461,18 @@ namespace NetCoreForce.ModelGenerator
             gen.AppendLine("\t{");
             gen.AppendLine("\t\tstring? Id { get; set; }");
             gen.AppendLine("\t\tstatic abstract string SObjectTypeName { get; }");
+            gen.AppendLine("\t\tstatic string GetTableName(this ISObjectIdentity identity, Type type)");
+            gen.AppendLine("\t\t{");
+            gen.AppendLine("\t\t    if (!typeof(ISObjectIdentity).IsAssignableFrom(type))");
+            gen.AppendLine("\t\t    {");
+            gen.AppendLine("\t\t        throw new NotSupportedException($\"Type of {type.FullName} does not implement ISObjectIdentity\");");
+            gen.AppendLine("\t\t    }");
+            gen.AppendLine("\t\t");
+            gen.AppendLine("\t\t    return (string)type");
+            gen.AppendLine("\t\t        .GetProperty(nameof(ISObjectIdentity.SObjectTypeName),");
+            gen.AppendLine("\t\t            BindingFlags.Public | BindingFlags.Static)!");
+            gen.AppendLine("\t\t        .GetValue(null)!;");
+            gen.AppendLine("\t\t}");
             gen.AppendLine("\t}");
 
             if (!string.IsNullOrEmpty(config.ClassNamespace))
