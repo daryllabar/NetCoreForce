@@ -97,6 +97,10 @@ namespace NetCoreForce.ModelGenerator
                     "Include referenced objects as properties",
                     CommandOptionType.NoValue);
 
+                var readOnlyPropertiesOption = command.Option("--readonly-properties",
+                    "Generate properties as read-only (get; set; protected;) based on API field settings",
+                    CommandOptionType.NoValue);
+
                 command.OnExecute(() =>
                 {
                     //load config file, if available
@@ -161,6 +165,11 @@ namespace NetCoreForce.ModelGenerator
                     if (includeReferences.HasValue())
                     {
                         config.IncludeReferences = includeReferences.HasValue();
+                    }
+
+                    if (readOnlyPropertiesOption.HasValue())
+                    {
+                        config.ReadonlyProperties = true;
                     }
 
                     //check for minimum needed options and prompt if necessary
@@ -594,7 +603,13 @@ namespace NetCoreForce.ModelGenerator
                     //}
                     csTypeName += "?";
 
-                    gen.AppendLine(string.Format("\t\tpublic {0} {1} {{ get; set; }}", csTypeName, field.Name));
+                    var setter = config.ReadonlyProperties
+                            && (!field.Updateable && !field.Creatable)
+                            && field.Name != "Id"
+                        ? "protected set;"
+                        : "set;";
+
+                    gen.AppendLine($"\t\tpublic {csTypeName} {field.Name} {{ get; {setter} }}");
                     gen.AppendLine();
 
                     if (field.Type == "reference" && config.IncludeReferences)
@@ -620,7 +635,7 @@ namespace NetCoreForce.ModelGenerator
 
                         string referenceClass = GetPrefixedSuffixed(config, field.ReferenceTo[0]);
 
-                        gen.AppendLine(string.Format("\t\tpublic {0} {1} {{ get; set; }}", referenceClass, field.RelationshipName));
+                        gen.AppendLine($"\t\tpublic {referenceClass} {field.RelationshipName} {{ get; {setter} }}");
                         gen.AppendLine();
                     }
                 }

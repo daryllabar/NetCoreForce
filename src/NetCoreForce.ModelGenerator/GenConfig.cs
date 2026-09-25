@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.ComponentModel;
 using NetCoreForce.Client.Models;
 
 namespace NetCoreForce.ModelGenerator
@@ -14,6 +15,7 @@ namespace NetCoreForce.ModelGenerator
         public string ClassNamespace { get; set; }
         public bool IncludeCustom { get; set; }
         public bool IncludeReferences { get; set; }
+        public bool ReadonlyProperties { get; set; }
 
         public GenConfig()
         {
