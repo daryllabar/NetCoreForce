@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using NetCoreForce.Client.Models;
+using Newtonsoft.Json;
 
 namespace NetCoreForce.ModelGenerator
 {
@@ -16,6 +17,15 @@ namespace NetCoreForce.ModelGenerator
         public bool IncludeCustom { get; set; }
         public bool IncludeReferences { get; set; }
         public bool ReadonlyProperties { get; set; }
+        public bool GenerateEnumProperties { get; set; }
+
+        /// <summary>
+        /// Optional case-sensitive map from a generated enum type name to an explicit name.
+        /// Omit the property to keep generated names. Keys are the names the generator would emit,
+        /// including any uniqueness suffix. Explicit names are used as given; naming collisions are not checked.
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public Dictionary<string, string> EnumNameMap { get; set; }
 
         public GenConfig()
         {

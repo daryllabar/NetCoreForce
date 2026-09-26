@@ -37,6 +37,9 @@ Options:
   -n|--namespace <namespace>         Namespace to use for generated classes
   -c|--include-custom                Include custom objects and fields
   -r|--include-references            Include referenced objects as properties
+  --readonly-properties              Generate non-createable/updateable properties with a protected setter
+  --generate-enum-properties         Emit JsonIgnore enum pass-through properties for picklist, combobox, and multipicklist fields
+  --enum-name-map <mapping>          Optional. Each value is GeneratedName=ExplicitName. Repeat for multiple mappings. Omit to keep generated names. Match is case-sensitive.
 ```
 You can supply the API credentials either in the config file, the command parameters, or wait to be interactively prompted for that information.
 
@@ -88,9 +91,29 @@ However, if you choose to save the config file, be careful with it as it does co
   "ClassSuffix": null,
   "ClassNamespace": "NetCoreForce.Models",
   "IncludeCustom": true,
-  "IncludeReferences": true
+  "IncludeReferences": true,
+  "GenerateEnumProperties": false
 }
 ```
+
+## Enum properties
+
+`--generate-enum-properties` (or `"GenerateEnumProperties": true` in config) leaves the JSON string properties unchanged and adds a `[JsonIgnore]` pass-through for picklist, combobox, and multipicklist fields.
+
+- Enum members use `[JsonStringEnumMemberName("api value")]` and a trailing `Undefined = -1` fallback.
+- Unique value sets are emitted in the same SObject `.cs` file after the class, named `{SObjectApiName}_{SanitizedField}` (for example `Reward_RewardStatus` for `Reward.Reward_Status__c`). Identical value lists (across objects/fields) share one type under an `Enum/` subdirectory. The shared name is the common tail of the `{Prefix}{SObject}{SanitizedField}{Suffix}` candidates, starting at the first capital letter. `AccountStatus` and `ContactStatus` become `Status`; `AccountUserStatus` and `ContactUserStatus` become `UserStatus`. A class prefix at the front is dropped; a class suffix at the end is kept. When that tail has no capital letter, the shortest candidate name is used.
+- A picklist whose API values are exactly `Yes` and `No` (case-sensitive, no other values) is named `YesNo`. `EnumNameMap` can still rename that, using the key `YesNo`.
+- When the same value list is used more than once on a single SObject and on no other SObject, the object name is removed from the front of the generated name (`AccountAddressType` becomes `AddressType`; a class prefix is kept, so `SfAccountAddressType` becomes `SfAddressType`). The longer name is kept when the shorter name is already a class name or another generated enum name.
+- Sharing is by picklist API values only; the generator does not read Salesforce global value-set identity.
+- `EnumNameMap` and `--enum-name-map` are optional. Omit both to keep the generated type names. When set, each entry renames one generated enum type after its name is chosen. The key is the name that would have been emitted, and the match is case-sensitive. The explicit name is used as given; the generator does not check it for collisions.
+
+```json
+"EnumNameMap": {
+  "LeadSource": "Source"
+}
+```
+- Generated `Serialization/EnumJsonMemberNames.cs` and `Serialization/StringExtensions.cs` live in `{ClassNamespace}.Serialization`.
+- Consumers need **System.Text.Json 9+** for `JsonStringEnumMemberNameAttribute`.
 
 **Generating all objects at once:** If you wish to generate all queryable objects in the generated output, add "all" as the first or only item in the "Objects" array in the config file, or enter "all" (without quotes) when prompted in the console.
 

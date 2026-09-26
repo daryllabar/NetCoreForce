@@ -1,5 +1,13 @@
 # Changelog
 
+### Unreleased
+
+* feat: ModelGenerator `--generate-enum-properties` emits JsonIgnore picklist/combobox/multipicklist enum pass-throughs, shared `Enum/` types for identical value lists, and `Serialization` helpers (`EnumJsonMemberNames`, `ParseEnum`)
+* feat: ModelGenerator `EnumNameMap` / `--enum-name-map` renames a generated enum type to an explicit name (case-sensitive, no collision check)
+* feat: ModelGenerator shared enum types are named from the common capitalized suffix (`AccountStatus` + `ContactStatus` → `Status`, `AccountUserStatus` + `ContactUserStatus` → `UserStatus`)
+* feat: ModelGenerator names a picklist enum `YesNo` when its values are exactly `Yes` and `No`; `EnumNameMap` can still rename it
+* feat: ModelGenerator drops the SObject name from a shared enum used only on that SObject (`AccountAddressType` → `AddressType`) unless the shorter name is already taken
+
 ### 2025-06-10 v5.0.0
 
 * feat: branched off and removed LINQ project, as it is unlikely to become production ready in the new future

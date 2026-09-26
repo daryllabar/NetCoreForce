@@ -13,7 +13,7 @@ using Newtonsoft.Json;
 
 namespace NetCoreForce.ModelGenerator
 {
-    class Program
+    public class Program
     {
         const string defaultConfigFilename = "modelgenerator_config.json";
 
@@ -101,6 +101,14 @@ namespace NetCoreForce.ModelGenerator
                     "Generate properties as read-only (get; set; protected;) based on API field settings",
                     CommandOptionType.NoValue);
 
+                var generateEnumPropertiesOption = command.Option("--generate-enum-properties",
+                    "Emit JsonIgnore enum pass-through properties for picklist, combobox, and multipicklist fields",
+                    CommandOptionType.NoValue);
+
+                var enumNameMapOption = command.Option("--enum-name-map <mapping>",
+                    "Optional. Rename a generated enum type. Each value is GeneratedName=ExplicitName. Repeat for multiple mappings. Match is case-sensitive. Omit to keep generated names.",
+                    CommandOptionType.MultipleValue);
+
                 command.OnExecute(() =>
                 {
                     //load config file, if available
@@ -172,6 +180,30 @@ namespace NetCoreForce.ModelGenerator
                         config.ReadonlyProperties = true;
                     }
 
+                    if (generateEnumPropertiesOption.HasValue())
+                    {
+                        config.GenerateEnumProperties = true;
+                    }
+
+                    if (enumNameMapOption.HasValue())
+                    {
+                        if (config.EnumNameMap == null)
+                        {
+                            config.EnumNameMap = new Dictionary<string, string>(StringComparer.Ordinal);
+                        }
+
+                        foreach (string entry in enumNameMapOption.Values)
+                        {
+                            if (!TryParseEnumNameMapping(entry, out string generatedName, out string explicitName))
+                            {
+                                Console.WriteLine("Ignoring enum name mapping '{0}'. Expected GeneratedName=ExplicitName.", entry);
+                                continue;
+                            }
+
+                            config.EnumNameMap[generatedName] = explicitName;
+                        }
+                    }
+
                     //check for minimum needed options and prompt if necessary
                     config = CheckOptions(config);
 
@@ -208,6 +240,29 @@ namespace NetCoreForce.ModelGenerator
             {
                 Console.WriteLine("Unable to execute application: {0}", ex.Message);
             }
+        }
+
+        /// <summary>
+        /// Parses a GeneratedName=ExplicitName mapping. Comparison of the generated name is left to the planner.
+        /// </summary>
+        public static bool TryParseEnumNameMapping(string entry, out string generatedName, out string explicitName)
+        {
+            generatedName = null;
+            explicitName = null;
+            if (string.IsNullOrWhiteSpace(entry))
+            {
+                return false;
+            }
+
+            int separator = entry.IndexOf('=');
+            if (separator <= 0 || separator >= entry.Length - 1)
+            {
+                return false;
+            }
+
+            generatedName = entry.Substring(0, separator).Trim();
+            explicitName = entry.Substring(separator + 1).Trim();
+            return generatedName.Length > 0 && explicitName.Length > 0;
         }
 
         /// <summary>
@@ -400,6 +455,8 @@ namespace NetCoreForce.ModelGenerator
                 }
             }
 
+            var describedObjects = new List<DescribedObject>();
+
             foreach (var obj in global.SObjects)
             {
                 //TODO: verify if we should skip all non queryable?
@@ -428,29 +485,69 @@ namespace NetCoreForce.ModelGenerator
 
                 //TODO: verify Name and Domain non-queryable objects cause compiler errors due to name/member dupe
 
-                Console.Write("Generating model for {0} - ", obj.Name);
+                Console.WriteLine("Describing {0}", obj.Name);
 
-                string className = obj.Name;
+                string className = string.Format("{0}{1}{2}", config.ClassPrefix ?? string.Empty, obj.Name, config.ClassSuffix ?? string.Empty);
 
-                className = string.Format("{0}{1}{2}", config.ClassPrefix ?? string.Empty, className, config.ClassSuffix ?? string.Empty);
+                describedObjects.Add(new DescribedObject
+                {
+                    ObjectApiName = obj.Name,
+                    ClassName = className,
+                    Describe = await client.GetObjectDescribe(obj.Name)
+                });
+            }
 
-                await CreateModel(client, obj.Name, className, config);
+            PicklistEnumPlan enumPlan = PicklistEnumPlanner.Build(describedObjects, config);
+
+            if (config.GenerateEnumProperties)
+            {
+                WriteEnumSupportFiles(config, enumPlan);
+            }
+
+            foreach (var described in describedObjects)
+            {
+                Console.Write("Generating model for {0} - ", described.ObjectApiName);
+                CreateModel(described.Describe, described.ClassName, config, enumPlan);
+            }
+        }
+
+        public static void WriteEnumSupportFiles(GenConfig config, PicklistEnumPlan enumPlan)
+        {
+            SerializationHelperGenerator.WriteHelpers(config);
+
+            if (enumPlan.SharedEnums.Count == 0)
+            {
+                return;
+            }
+
+            string enumDirectory = Path.Combine(config.OutputDirectory, "Enum");
+            Directory.CreateDirectory(enumDirectory);
+
+            foreach (var shared in enumPlan.SharedEnums)
+            {
+                string filePath = Path.Combine(enumDirectory, shared.TypeName + ".cs");
+                Console.WriteLine("Writing: " + filePath);
+                File.WriteAllText(filePath, PicklistEnumCodeGen.SharedEnumFile(shared, config.ClassNamespace));
             }
         }
 
         public static async Task CreateModel(ForceClient client, string objectName, string className, GenConfig config)
         {
-            string model = await GenClass(client, objectName, className, config);
+            SObjectDescribeFull data = await client.GetObjectDescribe(objectName);
+            CreateModel(data, className, config, null);
+        }
 
-            string fileName = fileName = string.Format("{0}.cs", className);
+        public static void CreateModel(SObjectDescribeFull data, string className, GenConfig config, PicklistEnumPlan enumPlan)
+        {
+            string model = GenClass(data, className, config, enumPlan);
+
+            string fileName = string.Format("{0}.cs", className);
 
             string filePath = Path.Combine(config.OutputDirectory, fileName);
 
             Console.WriteLine("Writing: " + filePath);
 
             File.WriteAllText(filePath, model);
-
-            return;
         }
 
         public static void GenInterface(GenConfig config)
@@ -470,7 +567,7 @@ namespace NetCoreForce.ModelGenerator
             gen.AppendLine("\t{");
             gen.AppendLine("\t\tstring? Id { get; set; }");
             gen.AppendLine("\t\tstatic abstract string SObjectTypeName { get; }");
-            gen.AppendLine("\t\tstatic string GetTableName(Type type)");
+            gen.AppendLine("\t\tstatic string GetTableName(System.Type type)");
             gen.AppendLine("\t\t{");
             gen.AppendLine("\t\t\tif (!typeof(ISObjectIdentity).IsAssignableFrom(type))");
             gen.AppendLine("\t\t\t{");
@@ -496,7 +593,11 @@ namespace NetCoreForce.ModelGenerator
         public static async Task<string> GenClass(ForceClient client, string objectName, string className, GenConfig config)
         {
             SObjectDescribeFull data = await client.GetObjectDescribe(objectName);
+            return GenClass(data, className, config, null);
+        }
 
+        public static string GenClass(SObjectDescribeFull data, string className, GenConfig config, PicklistEnumPlan enumPlan)
+        {
             StringBuilder gen = new StringBuilder();
 
             //gen.AppendLine("// Model generated on " + DateTime.Now.ToString("yyyy-MM-dd"));
@@ -509,7 +610,33 @@ namespace NetCoreForce.ModelGenerator
 
             string newline = Environment.NewLine;
 
+            List<PicklistEnumProperty> objectEnumProperties = null;
+            List<NestedPicklistEnum> nestedEnums = null;
+
+            bool hasEnumProperties = enumPlan != null
+                && enumPlan.PropertiesByObject.TryGetValue(data.Name, out objectEnumProperties)
+                && objectEnumProperties.Count > 0;
+            if (!hasEnumProperties)
+            {
+                objectEnumProperties = null;
+            }
+
+            bool hasNestedEnums = enumPlan != null
+                && enumPlan.NestedEnumsByObject.TryGetValue(data.Name, out nestedEnums)
+                && nestedEnums.Count > 0;
+            if (!hasNestedEnums)
+            {
+                nestedEnums = null;
+            }
+
+            bool hasMultipicklistEnums = objectEnumProperties != null
+                && objectEnumProperties.Exists(p => p.IsMultipicklist);
+
             gen.AppendLine("using System;");
+            if (hasMultipicklistEnums)
+            {
+                gen.AppendLine("using System.Collections.Generic;");
+            }
             gen.AppendLine("using NetCoreForce.Client.Models;");
             gen.AppendLine("using NetCoreForce.Client.Attributes;");
             gen.AppendLine("using Newtonsoft.Json;");
@@ -541,112 +668,21 @@ namespace NetCoreForce.ModelGenerator
 
             foreach (var field in data.Fields.OrderBy(f => f.Name?.ToLower()))
             {
-                try
-                {
-                    if (field.Custom && !config.IncludeCustom)
-                    {
-                        continue;
-                    }                    
-
-                    gen.AppendLine("\t\t///<summary>");
-                    gen.AppendLine("\t\t/// " + WebUtility.HtmlEncode(field.Label));
-                    gen.AppendLine("\t\t/// <para>Name: " + field.Name + "</para>");
-                    gen.AppendLine("\t\t/// <para>SF Type: " + field.Type + "</para>");
-                    if (field.AutoNumber)
-                    {
-                        gen.AppendLine("\t\t/// <para>AutoNumber field</para>");
-                    }
-                    //gen.AppendLine("\t\t/// <para>Custom: " + field.Custom.ToString() + "</para>");
-                    if (field.Custom)
-                    {
-                        gen.AppendLine("\t\t/// <para>Custom field</para>");
-                    }
-
-                    gen.AppendLine("\t\t/// <para>Nillable: " + field.Nillable.ToString() + "</para>");
-
-                    gen.AppendLine("\t\t///</summary>");
-
-                    gen.AppendLine(string.Format("\t\t[JsonProperty(PropertyName = \"{0}\")]", JsonName(field.Name)));
-
-                    if (!field.Creatable || !field.Updateable)
-                    {
-                        gen.AppendLine(string.Format("\t\t[Updateable({0}), Createable({1})]", field.Updateable.ToString().ToLower(), field.Creatable.ToString().ToLower()));
-                    }
-
-                    string csTypeName = SfTypeConverter.GetTypeName(field.Type);
-
-                    switch (csTypeName)
-                    {
-                        case "Boolean":
-                            csTypeName = "bool";
-                            break;
-                        case "String":
-                            csTypeName = "string";
-                            break;
-                        case "Double":
-                            csTypeName = "double";
-                            break;
-                        case "Int32":
-                            csTypeName = "int";
-                            break;
-                        case "Decimal":
-                            csTypeName = "decimal";
-                            break;
-                        default:
-                            break;
-                    }
-
-                    //we want all nullable types in the model, so that they are not serialized/initialized with default values
-                    //if (csTypeName == "bool" || csTypeName == "DateTimeOffset" || csTypeName == "DateTime" || csTypeName == "int" || csTypeName == "double" || csTypeName == "decimal")
-                    //{
-                    //    csTypeName += "?";
-                    //}
-                    csTypeName += "?";
-
-                    var setter = config.ReadonlyProperties
-                            && (!field.Updateable && !field.Creatable)
-                            && field.Name != "Id"
-                        ? "protected set;"
-                        : "set;";
-
-                    gen.AppendLine($"\t\tpublic {csTypeName} {field.Name} {{ get; {setter} }}");
-                    gen.AppendLine();
-
-                    if (field.Type == "reference" && config.IncludeReferences)
-                    {
-                        if (string.IsNullOrEmpty(field.RelationshipName) || field.ReferenceTo.Count > 1)
-                        {
-                            //only do single-object relationships
-                            continue;
-                        }
-
-                        if(field.RelationshipName == "ContentBody")
-                        {
-                            //exception for non-serializable type
-                            continue;
-                        }
-
-                        gen.AppendLine("\t\t///<summary>");
-                        gen.AppendLine("\t\t/// ReferenceTo: " + field.ReferenceTo[0]);
-                        gen.AppendLine("\t\t/// <para>RelationshipName: " + field.RelationshipName + "</para>");
-                        gen.AppendLine("\t\t///</summary>");
-                        gen.AppendLine(string.Format("\t\t[JsonProperty(PropertyName = \"{0}\")]", JsonName(field.RelationshipName)));
-                        gen.AppendLine("\t\t[Updateable(false), Createable(false)]");
-
-                        string referenceClass = GetPrefixedSuffixed(config, field.ReferenceTo[0]);
-
-                        gen.AppendLine($"\t\tpublic {referenceClass} {field.RelationshipName} {{ get; {setter} }}");
-                        gen.AppendLine();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine("Exception generating models: " + ex.Message);
-                    throw;
-                }
+                GenerateField(config, field, gen, objectEnumProperties);
             }
 
             gen.AppendLine("\t}");
+
+            if (nestedEnums != null)
+            {
+                string enumIndent = string.IsNullOrEmpty(config.ClassNamespace) ? string.Empty : "\t";
+                foreach (var nested in nestedEnums)
+                {
+                    gen.AppendLine();
+                    PicklistEnumCodeGen.AppendEnumType(gen, nested.TypeName, nested.Members, enumIndent);
+                }
+            }
+
             if (!string.IsNullOrEmpty(config.ClassNamespace))
             {
                 gen.AppendLine("}");
@@ -655,6 +691,115 @@ namespace NetCoreForce.ModelGenerator
             string result = gen.ToString();
 
             return result;
+        }
+
+        private static void GenerateField(GenConfig config, SObjectFieldMetadata field, StringBuilder gen, List<PicklistEnumProperty> objectEnumProperties)
+        {
+            if (field.Custom && !config.IncludeCustom)
+            {
+                return;
+            }                    
+
+            gen.AppendLine("\t\t///<summary>");
+            gen.AppendLine("\t\t/// " + WebUtility.HtmlEncode(field.Label));
+            gen.AppendLine("\t\t/// <para>Name: " + field.Name + "</para>");
+            gen.AppendLine("\t\t/// <para>SF Type: " + field.Type + "</para>");
+            if (field.AutoNumber)
+            {
+                gen.AppendLine("\t\t/// <para>AutoNumber field</para>");
+            }
+            //gen.AppendLine("\t\t/// <para>Custom: " + field.Custom.ToString() + "</para>");
+            if (field.Custom)
+            {
+                gen.AppendLine("\t\t/// <para>Custom field</para>");
+            }
+
+            gen.AppendLine("\t\t/// <para>Nillable: " + field.Nillable.ToString() + "</para>");
+
+            gen.AppendLine("\t\t///</summary>");
+
+            gen.AppendLine(string.Format("\t\t[JsonProperty(PropertyName = \"{0}\")]", JsonName(field.Name)));
+
+            if (!field.Creatable || !field.Updateable)
+            {
+                gen.AppendLine(string.Format("\t\t[Updateable({0}), Createable({1})]", field.Updateable.ToString().ToLower(), field.Creatable.ToString().ToLower()));
+            }
+
+            string csTypeName = SfTypeConverter.GetTypeName(field.Type);
+
+            switch (csTypeName)
+            {
+                case "Boolean":
+                    csTypeName = "bool";
+                    break;
+                case "String":
+                    csTypeName = "string";
+                    break;
+                case "Double":
+                    csTypeName = "double";
+                    break;
+                case "Int32":
+                    csTypeName = "int";
+                    break;
+                case "Decimal":
+                    csTypeName = "decimal";
+                    break;
+                default:
+                    break;
+            }
+
+            //we want all nullable types in the model, so that they are not serialized/initialized with default values
+            //if (csTypeName == "bool" || csTypeName == "DateTimeOffset" || csTypeName == "DateTime" || csTypeName == "int" || csTypeName == "double" || csTypeName == "decimal")
+            //{
+            //    csTypeName += "?";
+            //}
+            csTypeName += "?";
+
+            var setter = config.ReadonlyProperties
+                         && (!field.Updateable && !field.Creatable)
+                         && field.Name != "Id"
+                ? "protected set;"
+                : "set;";
+
+            gen.AppendLine($"\t\tpublic {csTypeName} {field.Name} {{ get; {setter} }}");
+            gen.AppendLine();
+
+            if (objectEnumProperties != null)
+            {
+                var enumProperty = objectEnumProperties.Find(p => p.FieldName == field.Name);
+                if (enumProperty != null)
+                {
+                    PicklistEnumCodeGen.AppendEnumProperty(gen, enumProperty, "\t\t");
+                    gen.AppendLine();
+                }
+            }
+
+            if (field.Type == "reference" && config.IncludeReferences)
+            {
+                if (string.IsNullOrEmpty(field.RelationshipName) || field.ReferenceTo.Count > 1)
+                {
+                    //only do single-object relationships
+                    return;
+                }
+
+                if(field.RelationshipName == "ContentBody")
+                {
+                    //exception for non-serializable type
+                    return;
+                }
+
+                gen.AppendLine("\t\t///<summary>");
+                gen.AppendLine("\t\t/// ReferenceTo: " + field.ReferenceTo[0]);
+                gen.AppendLine("\t\t/// <para>RelationshipName: " + field.RelationshipName + "</para>");
+                gen.AppendLine("\t\t///</summary>");
+                gen.AppendLine(string.Format("\t\t[JsonProperty(PropertyName = \"{0}\")]", JsonName(field.RelationshipName)));
+                gen.AppendLine("\t\t[Updateable(false), Createable(false)]");
+
+                string referenceClass = GetPrefixedSuffixed(config, field.ReferenceTo[0]);
+
+                gen.AppendLine($"\t\tpublic {referenceClass} {field.RelationshipName} {{ get; {setter} }}");
+                gen.AppendLine();
+            }
         }
 
         private static string GetPrefixedSuffixed(GenConfig config, string name)
