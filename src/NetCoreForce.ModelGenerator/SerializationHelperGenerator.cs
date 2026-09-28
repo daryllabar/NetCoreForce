@@ -19,10 +19,7 @@ namespace NetCoreForce.ModelGenerator
         public static string EnumJsonMemberNamesSource(string ns)
         {
             var gen = new StringBuilder();
-            gen.AppendLine("using System;");
             gen.AppendLine("using System.Collections.Concurrent;");
-            gen.AppendLine("using System.Collections.Generic;");
-            gen.AppendLine("using System.Linq;");
             gen.AppendLine("using System.Reflection;");
             gen.AppendLine("using System.Text.Json.Serialization;");
             gen.AppendLine();
@@ -83,7 +80,7 @@ namespace NetCoreForce.ModelGenerator
             gen.AppendLine("                var map = new Dictionary<string, TEnum>(StringComparer.OrdinalIgnoreCase);");
             gen.AppendLine("                foreach (var field in typeof(TEnum).GetFields(BindingFlags.Public | BindingFlags.Static))");
             gen.AppendLine("                {");
-            gen.AppendLine("                    var enumValue = (TEnum)field.GetValue(null);");
+            gen.AppendLine("                    var enumValue = (TEnum)(field.GetValue(null) ?? default(TEnum));");
             gen.AppendLine("                    map[field.Name] = enumValue;");
             gen.AppendLine("                    var wireName = field.GetCustomAttribute<JsonStringEnumMemberNameAttribute>()?.Name;");
             gen.AppendLine("                    if (!string.IsNullOrEmpty(wireName))");
@@ -103,10 +100,6 @@ namespace NetCoreForce.ModelGenerator
         public static string StringExtensionsSource(string ns)
         {
             var gen = new StringBuilder();
-            gen.AppendLine("using System;");
-            gen.AppendLine("using System.Collections.Generic;");
-            gen.AppendLine("using System.Linq;");
-            gen.AppendLine();
             gen.Append("namespace ");
             gen.AppendLine(ns);
             gen.AppendLine("{");
@@ -115,7 +108,7 @@ namespace NetCoreForce.ModelGenerator
             gen.AppendLine("        /// <summary>");
             gen.AppendLine("        /// Parses a string value into an enum of type TEnum, using the -1 value if parsing fails or null if the input is null/whitespace.");
             gen.AppendLine("        /// </summary>");
-            gen.AppendLine("        public static TEnum? ParseEnum<TEnum>(this string value)");
+            gen.AppendLine("        public static TEnum? ParseEnum<TEnum>(this string? value)");
             gen.AppendLine("            where TEnum : struct, Enum");
             gen.AppendLine("        {");
             gen.AppendLine("            if (string.IsNullOrWhiteSpace(value))");
@@ -128,11 +121,12 @@ namespace NetCoreForce.ModelGenerator
             gen.AppendLine("                : (TEnum)(object)(-1);");
             gen.AppendLine("        }");
             gen.AppendLine();
+            gen.AppendLine("        private static readonly char[] SemicolonSplitChars = [';'];");
             gen.AppendLine("        /// <summary>");
             gen.AppendLine("        /// Parses a Salesforce semicolon-separated multipicklist into enum values.");
             gen.AppendLine("        /// Unknown tokens map to <paramref name=\"undefined\"/>.");
             gen.AppendLine("        /// </summary>");
-            gen.AppendLine("        public static List<TEnum> ParseEnumList<TEnum>(this string value)");
+            gen.AppendLine("        public static List<TEnum> ParseEnumList<TEnum>(this string? value)");
             gen.AppendLine("            where TEnum : struct, Enum");
             gen.AppendLine("        {");
             gen.AppendLine("            if (string.IsNullOrWhiteSpace(value))");
@@ -141,7 +135,7 @@ namespace NetCoreForce.ModelGenerator
             gen.AppendLine("            }");
             gen.AppendLine();
             gen.AppendLine("            return value");
-            gen.AppendLine("                .Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)");
+            gen.AppendLine("                .Split(SemicolonSplitChars, StringSplitOptions.RemoveEmptyEntries)");
             gen.AppendLine("                .Select(v => v.Trim())");
             gen.AppendLine("                .Where(v => v.Length > 0)");
             gen.AppendLine("                .Select(v => v.ParseEnum<TEnum>() ?? (TEnum)(object)(-1))");
@@ -151,7 +145,7 @@ namespace NetCoreForce.ModelGenerator
             gen.AppendLine("        /// <summary>");
             gen.AppendLine("        /// Joins enum values into a Salesforce multipicklist string. Undefined values are omitted.");
             gen.AppendLine("        /// </summary>");
-            gen.AppendLine("        public static string ToSerializedPicklist<TEnum>(this IEnumerable<TEnum> values)");
+            gen.AppendLine("        public static string? ToSerializedPicklist<TEnum>(this IEnumerable<TEnum>? values)");
             gen.AppendLine("            where TEnum : struct, Enum");
             gen.AppendLine("        {");
             gen.AppendLine("            if (values == null)");
