@@ -71,7 +71,7 @@ namespace NetCoreForce.ModelGenerator
             gen.AppendLine("            return attribute != null ? attribute.Name : field.Name;");
             gen.AppendLine("        }");
             gen.AppendLine();
-            gen.AppendLine("        private static class EnumNameCache<TEnum> where TEnum : struct, Enum");
+            gen.AppendLine("        private static partial class EnumNameCache<TEnum> where TEnum : struct, Enum");
             gen.AppendLine("        {");
             gen.AppendLine("            public static readonly Dictionary<string, TEnum> ByName = Build();");
             gen.AppendLine();
@@ -131,7 +131,7 @@ namespace NetCoreForce.ModelGenerator
             gen.AppendLine("        {");
             gen.AppendLine("            if (string.IsNullOrWhiteSpace(value))");
             gen.AppendLine("            {");
-            gen.AppendLine("                return null;");
+            gen.AppendLine("                return [];");
             gen.AppendLine("            }");
             gen.AppendLine();
             gen.AppendLine("            return value");
