@@ -7,6 +7,7 @@
 * feat: ModelGenerator shared enum types are named from the common capitalized suffix (`AccountStatus` + `ContactStatus` → `Status`, `AccountUserStatus` + `ContactUserStatus` → `UserStatus`)
 * feat: ModelGenerator names a picklist enum `YesNo` when its values are exactly `Yes` and `No`; `EnumNameMap` can still rename it
 * feat: ModelGenerator drops the SObject name from a shared enum used only on that SObject (`AccountAddressType` → `AddressType`) unless the shorter name is already taken
+* feat: ModelGenerator emits an enum pass-through for `TEXT(Relationship.Field)` formula fields, including standard lookups such as `TEXT(Account.Type)`, reusing the related picklist field's generated enum type
 
 ### 2025-06-10 v5.0.0
 

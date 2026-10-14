@@ -265,6 +265,117 @@ namespace NetCoreForce.ModelGenerator.Tests
         }
 
         [Fact]
+        public void Build_ResolvesFormulaEnum_FromRelatedObjectPicklist()
+        {
+            var config = TestData.Config(generateEnums: true, prefix: "");
+            var warrantyPart = TestData.Describe(
+                "Vehicle_Part__c",
+                TestData.Field("Vehicle_Trim__c", "picklist", "Standard", "Extended"));
+            warrantyPart.Describe.ChildRelationships = new List<ChildRelationship>
+            {
+                TestData.ChildRelationship("rto_Vehicle__c", "Vehicle_Part__c")
+            };
+
+            var warranty = TestData.Describe(
+                "rto_Vehicle__c",
+                TestData.FormulaField(
+                    "Vehicle_Trim__c",
+                    "TEXT(Vehicle_Part__r.Vehicle_Trim__c)"));
+
+            var plan = PicklistEnumPlanner.Build(new[] { warrantyPart, warranty }, config);
+
+            Assert.Equal(
+                "Vehicle_Part__c_VehicleTrim",
+                plan.NestedEnumsByObject["Vehicle_Part__c"][0].TypeName);
+
+            var formulaProperty = plan.PropertiesByObject["rto_Vehicle__c"]
+                .Single(p => p.FieldName == "Vehicle_Trim__c");
+
+            Assert.Equal("Vehicle_Part__c_VehicleTrim", formulaProperty.EnumTypeName);
+            Assert.False(formulaProperty.IsMultipicklist);
+        }
+
+        [Fact]
+        public void Build_ResolvesFormulaEnum_FromStandardLookup()
+        {
+            var config = TestData.Config(generateEnums: true, prefix: "");
+            var account = TestData.Describe("Account", TestData.Field("Type", "picklist", "Prospect", "Customer"));
+            account.Describe.ChildRelationships = new List<ChildRelationship>
+            {
+                TestData.ChildRelationship("Contact", "AccountId", "Account")
+            };
+
+            var contact = TestData.Describe(
+                "Contact",
+                TestData.FormulaField("Account_Type__c", "TEXT(Account.Type)"));
+
+            var plan = PicklistEnumPlanner.Build(new[] { account, contact }, config);
+
+            Assert.Equal("Account_Type", plan.NestedEnumsByObject["Account"][0].TypeName);
+            Assert.Equal("Account_Type", plan.PropertiesByObject["Contact"][0].EnumTypeName);
+            Assert.Equal("Account_Type__c", plan.PropertiesByObject["Contact"][0].FieldName);
+        }
+
+        [Fact]
+        public void Build_IgnoresFormula_WhenRelatedFieldHasNoEnum()
+        {
+            var config = TestData.Config(generateEnums: true, prefix: "");
+            var warrantyPart = TestData.Describe(
+                "Vehicle_Part__c",
+                TestData.Field("Name", "string"));
+            warrantyPart.Describe.ChildRelationships = new List<ChildRelationship>
+            {
+                TestData.ChildRelationship("rto_Vehicle__c", "Vehicle_Part__c")
+            };
+
+            var warranty = TestData.Describe(
+                "rto_Vehicle__c",
+                TestData.FormulaField("Part_Name__c", "TEXT(Vehicle_Part__r.Name)"));
+
+            var plan = PicklistEnumPlanner.Build(new[] { warrantyPart, warranty }, config);
+
+            Assert.False(plan.PropertiesByObject.ContainsKey("rto_Vehicle__c"));
+        }
+
+        [Fact]
+        public void Build_IgnoresFormula_WhenRelatedObjectNotInDescribedObjects()
+        {
+            var config = TestData.Config(generateEnums: true, prefix: "");
+            var warranty = TestData.Describe(
+                "rto_Vehicle__c",
+                TestData.FormulaField(
+                    "Vehicle_Trim__c",
+                    "TEXT(Vehicle_Part__r.Vehicle_Trim__c)"));
+
+            var plan = PicklistEnumPlanner.Build(new[] { warranty }, config);
+
+            Assert.False(plan.PropertiesByObject.ContainsKey("rto_Vehicle__c"));
+        }
+
+        [Fact]
+        public void Build_IgnoresFormula_WhenNotASimpleTextOfRelationshipField()
+        {
+            var config = TestData.Config(generateEnums: true, prefix: "");
+            var warrantyPart = TestData.Describe(
+                "Vehicle_Part__c",
+                TestData.Field("Vehicle_Trim__c", "picklist", "Standard", "Extended"));
+            warrantyPart.Describe.ChildRelationships = new List<ChildRelationship>
+            {
+                TestData.ChildRelationship("rto_Vehicle__c", "Vehicle_Part__c")
+            };
+
+            var warranty = TestData.Describe(
+                "rto_Vehicle__c",
+                TestData.FormulaField(
+                    "Vehicle_Trim__c",
+                    "IF(ISBLANK(Vehicle_Part__r.Vehicle_Trim__c), \"\", TEXT(Vehicle_Part__r.Vehicle_Trim__c))"));
+
+            var plan = PicklistEnumPlanner.Build(new[] { warrantyPart, warranty }, config);
+
+            Assert.False(plan.PropertiesByObject.ContainsKey("rto_Vehicle__c"));
+        }
+
+        [Fact]
         public void Build_DropsTablePrefix_WhenPicklistIsReusedOnOneObject()
         {
             var config = TestData.Config(generateEnums: true, prefix: "");
@@ -572,6 +683,31 @@ namespace NetCoreForce.ModelGenerator.Tests
                 Creatable = true,
                 Updateable = true,
                 PicklistValues = values.Select(v => new PickListValue { Value = v, Active = true }).ToList()
+            };
+        }
+
+        public static SObjectFieldMetadata FormulaField(string name, string formula)
+        {
+            return new SObjectFieldMetadata
+            {
+                Name = name,
+                Type = "string",
+                Label = name,
+                Nillable = true,
+                Creatable = false,
+                Updateable = false,
+                Calculated = true,
+                CalculatedFormula = formula
+            };
+        }
+
+        public static ChildRelationship ChildRelationship(string childSObject, string field, string relationshipName = null)
+        {
+            return new ChildRelationship
+            {
+                ChildSObject = childSObject,
+                Field = field,
+                RelationshipName = relationshipName
             };
         }
     }

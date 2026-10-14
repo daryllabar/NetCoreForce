@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using NetCoreForce.Client.Models;
 
 namespace NetCoreForce.ModelGenerator
@@ -157,7 +158,21 @@ namespace NetCoreForce.ModelGenerator
 
                 foreach (var field in IncludedFields(obj.Describe, config))
                 {
-                    if (!assignmentByField.TryGetValue(FieldKey(obj.ObjectApiName, field.Name), out var assignment))
+                    string enumTypeName;
+                    bool isMultipicklist;
+
+                    if (assignmentByField.TryGetValue(FieldKey(obj.ObjectApiName, field.Name), out var assignment))
+                    {
+                        enumTypeName = assignment.EnumTypeName;
+                        isMultipicklist = field.Type.Equals("multipicklist", StringComparison.OrdinalIgnoreCase);
+                    }
+                    else
+                    {
+                        enumTypeName = ResolveFormulaEnumType(obj, field, objects, assignmentByField);
+                        isMultipicklist = false;
+                    }
+
+                    if (enumTypeName == null)
                     {
                         continue;
                     }
@@ -169,8 +184,8 @@ namespace NetCoreForce.ModelGenerator
                     {
                         FieldName = field.Name,
                         PropertyName = propertyName,
-                        EnumTypeName = assignment.EnumTypeName,
-                        IsMultipicklist = field.Type.Equals("multipicklist", StringComparison.OrdinalIgnoreCase)
+                        EnumTypeName = enumTypeName,
+                        IsMultipicklist = isMultipicklist
                     });
                 }
 
@@ -455,6 +470,74 @@ namespace NetCoreForce.ModelGenerator
         private static string FieldKey(string objectApiName, string fieldName)
         {
             return objectApiName + "\0" + fieldName;
+        }
+
+        /// <summary>
+        /// Matches a single-level text-of-picklist formula, e.g. "TEXT(Warranty_Product__r.Warranty_Offering_Type__c)".
+        /// Group 1 is the relationship name, group 2 is the field name on the related object.
+        /// </summary>
+        private static readonly Regex TextFormulaPattern = new Regex(
+            @"^\s*TEXT\s*\(\s*([A-Za-z0-9_]+)\s*\.\s*([A-Za-z0-9_]+)\s*\)\s*$",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        /// <summary>
+        /// Resolves the enum type for a formula field whose formula is TEXT(Relationship.Field).
+        /// The related object is the one whose describe has a ChildRelationship with ChildSObject equal
+        /// to <paramref name="childObject"/> and either RelationshipName equal to the formula's relationship
+        /// (standard lookups such as Account, and custom lookups such as Warranty_Product__r) or, for a
+        /// custom relationship, Field equal to that name with "__r" replaced by "__c".
+        /// When more than one parent matches, the first whose related field already has a generated enum is used.
+        /// Returns null when the formula does not match this shape or no related field has an enum assigned.
+        /// </summary>
+        private static string ResolveFormulaEnumType(
+            DescribedObject childObject,
+            SObjectFieldMetadata field,
+            IReadOnlyList<DescribedObject> objects,
+            IReadOnlyDictionary<string, EnumTypeAssignment> assignmentByField)
+        {
+            if (field == null || !field.Calculated || string.IsNullOrWhiteSpace(field.CalculatedFormula))
+            {
+                return null;
+            }
+
+            Match match = TextFormulaPattern.Match(field.CalculatedFormula);
+            if (!match.Success)
+            {
+                return null;
+            }
+
+            string relationshipName = match.Groups[1].Value;
+            string relatedFieldName = match.Groups[2].Value;
+            string lookupFieldName = relationshipName.EndsWith("__r", StringComparison.OrdinalIgnoreCase)
+                ? relationshipName.Substring(0, relationshipName.Length - 3) + "__c"
+                : null;
+
+            foreach (var relatedObject in objects)
+            {
+                if (relatedObject?.Describe?.ChildRelationships == null)
+                {
+                    continue;
+                }
+
+                bool isParent = relatedObject.Describe.ChildRelationships.Any(r =>
+                    string.Equals(r.ChildSObject, childObject.ObjectApiName, StringComparison.OrdinalIgnoreCase)
+                    && (string.Equals(r.RelationshipName, relationshipName, StringComparison.OrdinalIgnoreCase)
+                        || (lookupFieldName != null && string.Equals(r.Field, lookupFieldName, StringComparison.OrdinalIgnoreCase))));
+                if (!isParent)
+                {
+                    continue;
+                }
+
+                var relatedField = relatedObject.Describe.Fields?.FirstOrDefault(f =>
+                    f != null && string.Equals(f.Name, relatedFieldName, StringComparison.OrdinalIgnoreCase));
+                if (relatedField != null
+                    && assignmentByField.TryGetValue(FieldKey(relatedObject.ObjectApiName, relatedField.Name), out var assignment))
+                {
+                    return assignment.EnumTypeName;
+                }
+            }
+
+            return null;
         }
 
         private sealed class PicklistFieldCandidate
