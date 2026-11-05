@@ -8,6 +8,7 @@
 * feat: ModelGenerator names a picklist enum `YesNo` when its values are exactly `Yes` and `No`; `EnumNameMap` can still rename it
 * feat: ModelGenerator drops the SObject name from a shared enum used only on that SObject (`AccountAddressType` → `AddressType`) unless the shorter name is already taken
 * feat: ModelGenerator emits an enum pass-through for `TEXT(Relationship.Field)` formula fields, including standard lookups such as `TEXT(Account.Type)`, reusing the related picklist field's generated enum type
+* feat: ModelGenerator can include inactive custom picklist values on generated enums and mark them `[Obsolete]` when `IncludeInactivePicklistValues` is true, loading them with the Metadata API because SObject describe returns active values only
 
 ### 2025-06-10 v5.0.0
 

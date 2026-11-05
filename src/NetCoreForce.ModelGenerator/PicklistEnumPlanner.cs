@@ -22,28 +22,98 @@ namespace NetCoreForce.ModelGenerator
 
         public static string Fingerprint(IEnumerable<PickListValue> values)
         {
-            var apiValues = DistinctApiValues(values);
-            if (apiValues.Count == 0)
+            var entries = NormalizeValues(values);
+            if (entries.Count == 0)
             {
                 return null;
             }
 
-            return string.Join("\n", apiValues);
+            return Fingerprint(entries);
         }
 
         public static List<string> DistinctApiValues(IEnumerable<PickListValue> values)
         {
+            return NormalizeValues(values).Select(e => e.Value).ToList();
+        }
+
+        /// <summary>
+        /// Distinct API values in ordinal order. A value is active when any describe entry for it is active.
+        /// </summary>
+        public static List<PicklistApiValue> NormalizeValues(IEnumerable<PickListValue> values)
+        {
             if (values == null)
             {
-                return new List<string>();
+                return new List<PicklistApiValue>();
             }
 
             return values
                 .Where(v => v != null && !string.IsNullOrEmpty(v.Value))
-                .Select(v => v.Value)
-                .Distinct(StringComparer.Ordinal)
-                .OrderBy(v => v, StringComparer.Ordinal)
+                .GroupBy(v => v.Value, StringComparer.Ordinal)
+                .Select(g => new PicklistApiValue(g.Key, g.Any(v => v.Active)))
+                .OrderBy(e => e.Value, StringComparer.Ordinal)
                 .ToList();
+        }
+
+        private static string Fingerprint(IReadOnlyList<PicklistApiValue> entries)
+        {
+            return string.Join("\n", entries.Select(e => e.Active ? e.Value : e.Value + "\0inactive"));
+        }
+
+        /// <summary>
+        /// Adds inactive picklist values that describe omitted. A value already present on the field is left unchanged,
+        /// so an active describe entry is never replaced. Returns the number of values added.
+        /// </summary>
+        public static int MergeInactivePicklistValues(SObjectDescribeFull describe, IEnumerable<InactivePicklistValue> inactiveValues)
+        {
+            if (describe?.Fields == null || inactiveValues == null)
+            {
+                return 0;
+            }
+
+            var fieldsByName = new Dictionary<string, SObjectFieldMetadata>(StringComparer.OrdinalIgnoreCase);
+            foreach (var field in describe.Fields)
+            {
+                if (field != null && !string.IsNullOrEmpty(field.Name) && !fieldsByName.ContainsKey(field.Name))
+                {
+                    fieldsByName[field.Name] = field;
+                }
+            }
+
+            int added = 0;
+            foreach (var inactiveValue in inactiveValues)
+            {
+                if (inactiveValue == null || string.IsNullOrEmpty(inactiveValue.Value) || string.IsNullOrEmpty(inactiveValue.FieldName))
+                {
+                    continue;
+                }
+
+                if (!fieldsByName.TryGetValue(inactiveValue.FieldName, out var field) || !IsEnumFieldType(field.Type))
+                {
+                    continue;
+                }
+
+                if (field.PicklistValues == null)
+                {
+                    field.PicklistValues = new List<PickListValue>();
+                }
+
+                bool alreadyPresent = field.PicklistValues.Any(v =>
+                    v != null && string.Equals(v.Value, inactiveValue.Value, StringComparison.Ordinal));
+                if (alreadyPresent)
+                {
+                    continue;
+                }
+
+                field.PicklistValues.Add(new PickListValue
+                {
+                    Value = inactiveValue.Value,
+                    Label = inactiveValue.Label,
+                    Active = false
+                });
+                added++;
+            }
+
+            return added;
         }
 
         public static PicklistEnumPlan Build(
@@ -71,7 +141,7 @@ namespace NetCoreForce.ModelGenerator
                         continue;
                     }
 
-                    var apiValues = DistinctApiValues(field.PicklistValues);
+                    var apiValues = NormalizeValues(field.PicklistValues);
                     if (apiValues.Count == 0)
                     {
                         continue;
@@ -82,7 +152,7 @@ namespace NetCoreForce.ModelGenerator
                         ObjectApiName = obj.ObjectApiName,
                         ClassName = obj.ClassName,
                         Field = field,
-                        Fingerprint = string.Join("\n", apiValues),
+                        Fingerprint = Fingerprint(apiValues),
                         ApiValues = apiValues
                     });
                 }
@@ -211,17 +281,18 @@ namespace NetCoreForce.ModelGenerator
                 .OrderBy(f => f.Name?.ToLowerInvariant());
         }
 
-        private static List<PicklistEnumMember> BuildMembers(IReadOnlyList<string> apiValues)
+        private static List<PicklistEnumMember> BuildMembers(IReadOnlyList<PicklistApiValue> apiValues)
         {
             var used = new HashSet<string>(StringComparer.Ordinal);
             var members = new List<PicklistEnumMember>();
             foreach (var apiValue in apiValues)
             {
-                string identifier = CsIdentifier.AllocateUniqueMember(CsIdentifier.SanitizeMemberName(apiValue), used);
+                string identifier = CsIdentifier.AllocateUniqueMember(CsIdentifier.SanitizeMemberName(apiValue.Value), used);
                 members.Add(new PicklistEnumMember
                 {
                     Identifier = identifier,
-                    ApiValue = apiValue
+                    ApiValue = apiValue.Value,
+                    IsObsolete = !apiValue.Active
                 });
             }
 
@@ -253,7 +324,7 @@ namespace NetCoreForce.ModelGenerator
             if (groupFields.Count == 1)
             {
                 var owner = groupFields[0];
-                return IsOnlyYesAndNo(owner.ApiValues)
+                return IsOnlyYesAndNo(owner.ApiValues.Select(v => v.Value).ToList())
                     ? YesNoEnumName
                     : owner.ObjectApiName + "_" + CsIdentifier.SanitizeMemberName(CsIdentifier.StripFieldName(owner.Field.Name));
             }
@@ -264,7 +335,7 @@ namespace NetCoreForce.ModelGenerator
                     + CsIdentifier.SanitizeMemberName(CsIdentifier.StripFieldName(f.Field.Name))
                     + (config.ClassSuffix ?? string.Empty))
                 .ToList();
-            return IsOnlyYesAndNo(groupFields[0].ApiValues)
+            return IsOnlyYesAndNo(groupFields[0].ApiValues.Select(v => v.Value).ToList())
                 ? YesNoEnumName
                 : CommonCapitalizedSuffix(candidateNames) ?? ShortestName(candidateNames);
         }
@@ -546,7 +617,7 @@ namespace NetCoreForce.ModelGenerator
             public string ClassName { get; set; }
             public SObjectFieldMetadata Field { get; set; }
             public string Fingerprint { get; set; }
-            public List<string> ApiValues { get; set; }
+            public List<PicklistApiValue> ApiValues { get; set; }
         }
 
         private sealed class EnumTypeAssignment
@@ -554,6 +625,18 @@ namespace NetCoreForce.ModelGenerator
             public string EnumTypeName { get; set; }
             public bool IsNested { get; set; }
         }
+    }
+
+    public readonly struct PicklistApiValue
+    {
+        public PicklistApiValue(string value, bool active)
+        {
+            Value = value;
+            Active = active;
+        }
+
+        public string Value { get; }
+        public bool Active { get; }
     }
 
     public sealed class DescribedObject

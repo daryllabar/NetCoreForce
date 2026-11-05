@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.ComponentModel;
 using NetCoreForce.Client.Models;
 using Newtonsoft.Json;
 
@@ -15,6 +14,7 @@ namespace NetCoreForce.ModelGenerator
         public string ClassSuffix { get; set; }
         public string ClassNamespace { get; set; }
         public bool IncludeCustom { get; set; }
+        public bool IncludeInactivePicklistValues { get; set; }
         public bool IncludeReferences { get; set; }
         public bool ReadonlyProperties { get; set; }
         public bool GenerateEnumProperties { get; set; }

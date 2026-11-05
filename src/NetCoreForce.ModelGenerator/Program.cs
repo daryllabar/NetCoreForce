@@ -105,6 +105,10 @@ namespace NetCoreForce.ModelGenerator
                     "Emit JsonIgnore enum pass-through properties for picklist, combobox, and multipicklist fields",
                     CommandOptionType.NoValue);
 
+                var includeInactivePicklistValuesOption = command.Option("--include-inactive-picklist-values",
+                    "Include inactive picklist values on generated enums and mark them Obsolete. Omit to generate active values only.",
+                    CommandOptionType.NoValue);
+
                 var enumNameMapOption = command.Option("--enum-name-map <mapping>",
                     "Optional. Rename a generated enum type. Each value is GeneratedName=ExplicitName. Repeat for multiple mappings. Match is case-sensitive. Omit to keep generated names.",
                     CommandOptionType.MultipleValue);
@@ -183,6 +187,11 @@ namespace NetCoreForce.ModelGenerator
                     if (generateEnumPropertiesOption.HasValue())
                     {
                         config.GenerateEnumProperties = true;
+                    }
+
+                    if (includeInactivePicklistValuesOption.HasValue())
+                    {
+                        config.IncludeInactivePicklistValues = true;
                     }
 
                     if (enumNameMapOption.HasValue())
@@ -497,6 +506,14 @@ namespace NetCoreForce.ModelGenerator
                 });
             }
 
+            if (config.GenerateEnumProperties && config.IncludeInactivePicklistValues)
+            {
+                foreach (var described in describedObjects)
+                {
+                    await AddInactivePicklistValues(client, described);
+                }
+            }
+
             PicklistEnumPlan enumPlan = PicklistEnumPlanner.Build(describedObjects, config);
 
             if (config.GenerateEnumProperties)
@@ -508,6 +525,38 @@ namespace NetCoreForce.ModelGenerator
             {
                 Console.Write("Generating model for {0} - ", described.ObjectApiName);
                 CreateModel(described.Describe, described.ClassName, config, enumPlan);
+            }
+        }
+
+        private static bool _metadataApiUnavailable;
+
+        private static async Task AddInactivePicklistValues(ForceClient client, DescribedObject described)
+        {
+            if (_metadataApiUnavailable || described?.Describe == null || string.IsNullOrEmpty(described.ObjectApiName))
+            {
+                return;
+            }
+
+            try
+            {
+                List<InactivePicklistValue> inactiveValues = await MetadataPicklistValueReader.GetInactiveValues(client, described);
+                int added = PicklistEnumPlanner.MergeInactivePicklistValues(described.Describe, inactiveValues);
+                if (added > 0)
+                {
+                    Console.WriteLine("Added {0} inactive picklist value(s) for {1}", added, described.ObjectApiName);
+                }
+            }
+            catch (MetadataApiException ex) when (ex.AccessDenied)
+            {
+                _metadataApiUnavailable = true;
+                Console.WriteLine(
+                    "Inactive picklist values will not be included. The Metadata API rejected this login ({0}). " +
+                    "The authenticated user needs \"Modify Metadata Through Metadata API Functions\" or Modify All Data.",
+                    ex.Message);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Unable to read inactive picklist values for {0}: {1}", described.ObjectApiName, ex.Message);
             }
         }
 

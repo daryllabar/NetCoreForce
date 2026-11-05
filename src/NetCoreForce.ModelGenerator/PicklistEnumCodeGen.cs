@@ -17,6 +17,12 @@ namespace NetCoreForce.ModelGenerator
             for (int i = 0; i < members.Count; i++)
             {
                 var member = members[i];
+                if (member.IsObsolete)
+                {
+                    gen.Append(memberIndent);
+                    gen.AppendLine("[System.Obsolete(\"Inactive picklist value\")]");
+                }
+
                 gen.Append(memberIndent);
                 gen.Append("[System.Text.Json.Serialization.JsonStringEnumMemberName(\"");
                 gen.Append(CsIdentifier.EscapeAttributeString(member.ApiValue));

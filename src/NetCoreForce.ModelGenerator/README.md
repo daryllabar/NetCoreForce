@@ -91,6 +91,7 @@ However, if you choose to save the config file, be careful with it as it does co
   "ClassSuffix": null,
   "ClassNamespace": "NetCoreForce.Models",
   "IncludeCustom": true,
+  "IncludeInactivePicklistValues": false,
   "IncludeReferences": true,
   "GenerateEnumProperties": false
 }
@@ -100,7 +101,7 @@ However, if you choose to save the config file, be careful with it as it does co
 
 `--generate-enum-properties` (or `"GenerateEnumProperties": true` in config) leaves the JSON string properties unchanged and adds a `[JsonIgnore]` pass-through for picklist, combobox, and multipicklist fields.
 
-- Enum members use `[JsonStringEnumMemberName("api value")]` and a trailing `Undefined = -1` fallback.
+- Enum members use `[JsonStringEnumMemberName("api value")]` and a trailing `Undefined = -1` fallback. Inactive picklist values are omitted unless `"IncludeInactivePicklistValues": true` (or `--include-inactive-picklist-values`) is set. When it is set, they are included and marked `[Obsolete("Inactive picklist value")]`. SObject describe returns active values only, so the generator then reads the Metadata API (`readMetadata` of `CustomField`, and of `GlobalValueSet` when the field uses a global value set) and adds the inactive values before planning enums. A value already returned by describe is left unchanged. A value is inactive only when every entry for it is inactive. Fields share an enum only when their values and active flags match. Standard fields stay active-only. The authenticated user needs "Modify Metadata Through Metadata API Functions" or Modify All Data. If that call is denied, generation continues with the active values from describe and prints one message.
 - Unique value sets are emitted in the same SObject `.cs` file after the class, named `{SObjectApiName}_{SanitizedField}` (for example `Reward_RewardStatus` for `Reward.Reward_Status__c`). Identical value lists (across objects/fields) share one type under an `Enum/` subdirectory. The shared name is the common tail of the `{Prefix}{SObject}{SanitizedField}{Suffix}` candidates, starting at the first capital letter. `AccountStatus` and `ContactStatus` become `Status`; `AccountUserStatus` and `ContactUserStatus` become `UserStatus`. A class prefix at the front is dropped; a class suffix at the end is kept. When that tail has no capital letter, the shortest candidate name is used.
 - A picklist whose API values are exactly `Yes` and `No` (case-sensitive, no other values) is named `YesNo`. `EnumNameMap` can still rename that, using the key `YesNo`.
 - When the same value list is used more than once on a single SObject and on no other SObject, the object name is removed from the front of the generated name (`AccountAddressType` becomes `AddressType`; a class prefix is kept, so `SfAccountAddressType` becomes `SfAddressType`). The longer name is kept when the shorter name is already a class name or another generated enum name.

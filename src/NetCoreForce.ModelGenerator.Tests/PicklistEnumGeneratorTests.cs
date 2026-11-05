@@ -552,6 +552,82 @@ namespace NetCoreForce.ModelGenerator.Tests
         }
 
         [Fact]
+        public void Build_IncludesInactiveValues_AsObsoleteMembers()
+        {
+            var config = TestData.Config(generateEnums: true);
+            config.IncludeInactivePicklistValues = true;
+            var field = TestData.Field("Type", "picklist", "Prospect", "Former");
+            field.PicklistValues.Single(v => v.Value == "Former").Active = false;
+            var account = TestData.Describe("Account", field);
+
+            var plan = PicklistEnumPlanner.Build(new[] { account }, config);
+
+            var members = plan.NestedEnumsByObject["Account"][0].Members;
+            Assert.Equal("Former", members[0].Identifier);
+            Assert.True(members[0].IsObsolete);
+            Assert.Equal("Prospect", members[1].Identifier);
+            Assert.False(members[1].IsObsolete);
+        }
+
+        [Fact]
+        public void Build_DoesNotShare_WhenActiveFlagsDiffer()
+        {
+            var config = TestData.Config(generateEnums: true, prefix: "");
+            config.IncludeInactivePicklistValues = true;
+            var accountField = TestData.Field("Type", "picklist", "Prospect", "Former");
+            accountField.PicklistValues.Single(v => v.Value == "Former").Active = false;
+            var account = TestData.Describe("Account", accountField);
+            var lead = TestData.Describe("Lead", TestData.Field("Type", "picklist", "Former", "Prospect"));
+
+            var plan = PicklistEnumPlanner.Build(new[] { account, lead }, config);
+
+            Assert.Empty(plan.SharedEnums);
+            Assert.True(plan.NestedEnumsByObject["Account"][0].Members.Single(m => m.ApiValue == "Former").IsObsolete);
+            Assert.False(plan.NestedEnumsByObject["Lead"][0].Members.Single(m => m.ApiValue == "Former").IsObsolete);
+        }
+
+        [Fact]
+        public void Build_TreatsValueAsActive_WhenAnyEntryIsActive()
+        {
+            var values = new[]
+            {
+                new PickListValue { Value = "Former", Active = false },
+                new PickListValue { Value = "Former", Active = true }
+            };
+
+            var normalized = PicklistEnumPlanner.NormalizeValues(values);
+
+            Assert.Single(normalized);
+            Assert.True(normalized[0].Active);
+        }
+
+        [Fact]
+        public void MergeInactivePicklistValues_AddsOnlyMissingInactiveValues()
+        {
+            var describe = TestData.Describe(
+                "Account",
+                TestData.Field("Status__c", "picklist", "Open"),
+                TestData.Field("Name", "string")).Describe;
+            describe.Fields.Single(f => f.Name == "Status__c").Custom = true;
+            var inactiveValues = new[]
+            {
+                new InactivePicklistValue { FieldName = "Status__c", Value = "Open" },
+                new InactivePicklistValue { FieldName = "Status__c", Value = "Retired", Label = "Retired" },
+                new InactivePicklistValue { FieldName = "Name", Value = "Ignored" }
+            };
+
+            int added = PicklistEnumPlanner.MergeInactivePicklistValues(describe, inactiveValues);
+
+            Assert.Equal(1, added);
+            var values = describe.Fields.Single(f => f.Name == "Status__c").PicklistValues;
+            Assert.Equal(2, values.Count);
+            Assert.True(values.Single(v => v.Value == "Open").Active);
+            var retired = values.Single(v => v.Value == "Retired");
+            Assert.False(retired.Active);
+            Assert.Equal("Retired", retired.Label);
+        }
+
+        [Fact]
         public void Fingerprint_IgnoresOrderAndDuplicates()
         {
             var a = new[]
@@ -604,7 +680,30 @@ namespace NetCoreForce.ModelGenerator.Tests
             Assert.Contains("[System.Text.Json.Serialization.JsonStringEnumMemberName(\"Closed - Won\")]", source);
             Assert.Contains("ClosedWon,", source);
             Assert.Contains("Undefined = -1", source);
+            Assert.DoesNotContain("Obsolete", source);
             Assert.DoesNotContain("\t\tpublic enum Account_Type", source);
+        }
+
+        [Fact]
+        public void GenClass_MarksInactivePicklistValueObsolete()
+        {
+            var config = TestData.Config(generateEnums: true);
+            config.IncludeInactivePicklistValues = true;
+            var field = TestData.Field("Type", "picklist", "Prospect", "Former");
+            field.PicklistValues.Single(v => v.Value == "Former").Active = false;
+            var described = TestData.Describe("Account", field);
+            described.Describe.Label = "Account";
+            var plan = PicklistEnumPlanner.Build(new[] { described }, config);
+
+            string source = Program.GenClass(described.Describe, "SfAccount", config, plan);
+
+            Assert.Contains("[System.Obsolete(\"Inactive picklist value\")]", source);
+            Assert.Contains("Former,", source);
+            int obsoleteAt = source.IndexOf("[System.Obsolete(\"Inactive picklist value\")]");
+            int formerAt = source.IndexOf("Former,");
+            int prospectAttribute = source.IndexOf("[System.Text.Json.Serialization.JsonStringEnumMemberName(\"Prospect\")]");
+            Assert.True(obsoleteAt >= 0 && obsoleteAt < formerAt);
+            Assert.True(prospectAttribute > formerAt);
         }
 
         [Fact]

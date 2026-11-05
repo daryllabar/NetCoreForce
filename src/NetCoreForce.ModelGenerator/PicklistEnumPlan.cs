@@ -43,5 +43,10 @@ namespace NetCoreForce.ModelGenerator
     {
         public string Identifier { get; set; }
         public string ApiValue { get; set; }
+
+        /// <summary>
+        /// True when every describe entry for this API value is inactive.
+        /// </summary>
+        public bool IsObsolete { get; set; }
     }
 }
